@@ -1,0 +1,657 @@
+---
+title: 'Group Assignment2: Algae Blooms'
+author: "Aylin Kosar, Surya Aenuganti Ushasri, Salma Olmai, Nicolas Romero, Viraj Prasad Sapre"
+date: "November 2, 2018"
+output:
+  pdf_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Understanding the data
+```{r}
+library(DMwR)
+head(algae)
+#View(algae)
+names(algae)
+```
+
+Algae data:
+The dataet contains 200 water samples. Each sample contains the aggregated data of chemicals collected in those particualr sample over a 3 month period.
+
+First 3 columns are categorical. The next 8 are chemicals present in each of the sample. The next 7 columns are the harmful algae names which are named from a1 to a7.
+
+
+##Descriptive statistics
+```{r}
+summary(algae)
+```
+There are more samples collected in winter than any other season
+
+##Checking the Normality
+```{r}
+#Instead of frequency we get the probability densities
+hist(algae$mxPH, prob = T)
+```
+
+```{r}
+library(car)
+par(mfrow=c(1,2))
+hist(algae$mxPH, prob=T, xlab='',
+ main='Histogram of maximum pH value',ylim=0:1)
+#adds a smooth kernel line over the distribution
+lines(density(algae$mxPH,na.rm=T))
+#rug() performs the plotting and jitter is used to randomly #perturb slightly the original values to plot,
+#so that we almost eliminate the possibility of two values being #equal, thus avoiding ticks
+#over each other that would "hide" some values from the visual #inspection
+rug(jitter(algae$mxPH))
+qqPlot(algae$mxPH,main='Normal QQ plot of maximum pH')
+par(mfrow=c(1,1))
+```
+
+First graph shows us that there are some 2 points lower than any other lying as outliers. By histogram we can assume that the data maximum pH is normal. But when we look at the same data in Normal QQ plot we see that within a 95% confidence interval we cannot say that the data is normal as there are many low values.
+
+##Checking the variable distribution
+```{r}
+boxplot(algae$oPO4, ylab = "Orthophosphate (oPO4)")
+rug(jitter(algae$oPO4), side = 2)
+#draws the horizontal line at the mean  
+abline(h = mean(algae$oPO4, na.rm = T), lty = 2)
+```
+
+Box plot visualization orthophosphate(PO4)
+There are definitely outliers in the data which are of higher range. These outliers have influenced the mean and explains why is it bigger than median. But the distribution is concentrated on low values.
+
+
+```{r}
+plot(algae$NH4, xlab = "")
+#line at the mean
+abline(h = mean(algae$NH4, na.rm = T), lty = 1)
+#line at 1 std away from mean
+abline(h = mean(algae$NH4, na.rm = T) + sd(algae$NH4, na.rm = T),lty=2)
+#line at the median
+abline(h = median(algae$NH4, na.rm = T), lty = 3)
+#interactive function where clicking will diplay the data point
+identify(algae$NH4)
+```
+
+```{r}
+plot(algae$NH4, xlab = "")
+clicked.lines <- identify(algae$NH4)
+algae[clicked.lines, ]
+```
+
+```{r}
+algae[!is.na(algae$NH4) & algae$NH4 > 19000,]
+```
+
+This gives out the rows which are known and greater than 19000
+
+```{r}
+library(lattice)
+bwplot(size ~ a1, data=algae, ylab='River Size',xlab='Algal A1')
+```
+
+Higher frequencies of algal a1 are expected in smaller rivers.
+
+```{r}
+#box percentile plots
+library(Hmisc)
+bwplot(size ~ a1, data=algae,panel=panel.bpplot,
+probs=seq(.01,.49,by=.01), datadensity=TRUE,
+ylab='River Size',xlab='Algal A1')
+```
+
+The dots are the mean values. Here we can also see the spread of algae size according to the size of the rivers they are found in.
+Vertical lines are quartiles. 
+
+```{r}
+minO2 <- equal.count(na.omit(algae$mnO2), number=4,overlap=1/5)
+stripplot(season ~ a3|minO2, data=algae[!is.na(algae$mnO2),])
+```
+##Unknown values
+
+1. Completely eliminating the rows consisting of NA's
+```{r}
+data(algae)
+#complete.cases() checks whether the complete observation is #clean of NA values and then outputing boolean truth values
+nrow(algae[!complete.cases(algae),])
+```
+There are 16 rows which is not large enough to affect the model if we remove them
+```{r}
+#Don't execute the below line because this is going to eliminate #the NA value present rows
+#algae <- na.omit(algae)
+
+#Don't execute the below code if you don't know which rows have #NA values in their columns
+#algae <- algae[-c(62, 199), ]
+
+#1 way to check the rows with NA values
+#apply(algae, 1, function(x) sum(is.na(x)))
+
+#preinstalled function which gives us the rows with 20% of #columns as NA
+manyNAs(algae, 0.2)
+```
+
+```{r}
+#eliminating the rows with default % of the columns as NA values
+algae <- algae[-manyNAs(algae), ]
+```
+
+
+2. Filling in the Unknowns with the Most Frequent Values
+First check if the data is normally distributed because if it is then we can use mean as a statistic to fill in the missing values.
+If the data is skewed or has outliers we can use median as a better statistic of centrality.
+```{r}
+#Use the below if you know that row 48 has NA at mxPH
+#We use mean as a centrality because we saw earlier that mxPH is #normally distributed
+algae[48, "mxPH"] <- mean(algae$mxPH, na.rm = T)
+
+#Varibale Chla is unknown for 12 samples
+#distribution of Chla is skewed to lower values, and there are a #few extreme values that make the mean value (13.971) highly #unrepresentative
+algae[is.na(algae$Chla), "Chla"] <- median(algae$Chla, na.rm = T)
+```
+
+
+```{r}
+#data(algae)
+#algae <- algae[-manyNAs(algae), ]
+#algae <- centralImputation(algae)
+```
+
+The above strategy is usually considered bad because it may create a large bias and can influence the analysis. But unbiased methods to fill in the unknowns are very complex.
+
+3. Filling in the Unknown Values by Exploring Correlations
+
+```{r}
+#use="complete.obs" ignores NA for calculating correlation
+#Using from column 4 to 18 since 1-3 are nominal
+#symnum visualizes the correlation matrix
+symnum(cor(algae[,4:18],use="complete.obs"))
+```
+
+From the above matrix we can see that PO4 and opO4 have correlation between 0.9 and 0.95. We can use this to fill in the unknown.
+
+```{r}
+data(algae)
+algae <- algae[-manyNAs(algae), ]
+lm(PO4 ~ oPO4, data = algae)
+```
+
+The linear relation between these variables: 
+PO4 = 42.897+1.293*oPO4
+
+After removing the sample 62 and 199, we are left with a single observation with an unknown value on the variable PO4 (sample 28)
+
+```{r}
+algae[28, "PO4"] <- 42.897 + 1.293 * algae[28, "oPO4"]
+```
+
+```{r}
+#data(algae)
+#algae <- algae[-manyNAs(algae), ]
+
+#Create the below function
+
+#fillPO4 <- function(oP) {
+# if(is.na(oP))
+# return(NA)
+# else return(42.897+1.293*oP)
+# }
+
+#Use sapply to apply this function
+
+#algae[is.na(algae$PO4), "PO4"] <- sapply(algae[is.na(algae$PO4),
+# "oPO4"],fillPO4)
+```
+
+changing the order of factor levels on season according to their natural occurence
+```{r}
+#By default when we factor the levels are assigned according to the alphabetical order
+algae$season <- factor(algae$season, levels = c("spring",
+"summer","autumn","winter"))
+histogram(~mxPH | season, data = algae)
+```
+Looks like the mxPH are not influenced by the season they are collected in 
+```{r}
+histogram(~ mxPH | size,data=algae)
+```
+
+```{r}
+stripplot(size ~ mxPH | speed, data = algae, jitter = T)
+```
+
+This approach is too difficult if we have number of combinations to analyze and it makes sense to to use this method for data set with less variables.
+
+4. Filling in the Unknown Values by Exploring Similarities
+between Cases
+
+```{r}
+data(algae)
+algae <- algae[-manyNAs(algae), ]
+```
+
+In this section assumes that if two water samples are similar, and one of them has an unknown value in some variable, there is a high probability that this value is similar to the value of the other sample.
+
+```{r}
+#using knnimputation
+algae <- knnImputation(algae, k = 10, meth = "median")
+summary(algae)
+```
+
+In this case we used the median of k=10 nearest similar variables to fill in the unknowns after removing the 2 samples whose many of the variables were unknown first. 
+
+
+The NAs are removed and are stored in a new data frame **clean.algae**.
+
+```{r}
+
+data(algae)
+algae <- algae[-manyNAs(algae), ]
+clean.algae <- knnImputation(algae, k = 10)
+
+```
+
+A linear regression model is then created in order to predict the frequency of one of the alages. Within the model, all the variables from the data are the predictor values, hence the dot. 
+
+```{r}
+
+lm.a1 <- lm(a1 ~ ., data = clean.algae[, 1:12])
+
+```
+
+Below a summary of the linear model is obtained. We see the intercept is 42.94 which means there is an increase of 42.94 the seven alage samples. For the factor season, there are three extra variables created: seasonsummer, seasonspring,and seasonwinter. If there is a water sample with the value "autumn" stored within the variable "season", all the other extra variables will be set to zero.The Adjusted R square helps explain the variance of the model and has the numerical value 0.32.Since it is a small value it is not considered great for the model. Looking at the p value for the F test, it has the numerical value 7.22.Since the value is small we can reject the null hypothesis that the independent value, a1, does not not depend on the predictor values of the model.
+
+```{r}
+
+summary(lm.a1)
+
+```
+
+Below the ANOVA table shows the variance of each variable within the model **lm.a1**. The variable **season** is the one that contributes the least in reducing the fitting error of the model compared to the other variables in the model.  
+
+```{r}
+
+anova(lm.a1)
+
+```
+
+The **update** function is used to update the model by removing season. 
+
+```{r}
+
+lm2.a1 <- update(lm.a1, . ~ . - season)
+
+```
+
+There is a bit of an increase of the intercept with the value of 44.95. The model's fit if we look at the Adjusted R square has imporved slightly with the value of 0.33.
+
+```{r}
+
+summary(lm2.a1)
+
+```
+
+ANOVA is used again however this time to compare the two models lm.a1 and lm2.a1. The sum of squares have decreased by -448 and are not significant.  
+
+```{r}
+
+anova(lm.a1,lm2.a1)
+
+```
+
+The backward elimination is used for the following model. The function **step** is used for model search by the Akaike Information Criterion.  
+
+```{r}
+
+final.lm <- step(lm.a1)
+
+```
+
+The Adjusted R square still remains a small value. 
+
+```{r}
+
+summary(final.lm)
+
+```
+
+The following steps will help create a regression tree in order to predict the value of the frequencies of algae a1. Below the process of removing NAs and samples 62 and 199 are repeated again. The library **rpart** helps creates regression trees in R. There are 198 samples that were obtained to create the tree.
+
+```{r message=FALSE, warning=FALSE}
+
+library(rpart)
+
+ data(algae)
+ 
+ algae <- algae[-manyNAs(algae), ]
+ 
+ rt.a1 <- rpart(a1 ~ ., data = algae[, 1:12])
+
+ rt.a1
+ 
+```
+
+Below a graphical image of the tree is created. 
+
+```{r}
+
+prettyTree(rt.a1)
+
+```
+
+A subset of subtress for the tree are created using the function **printcp**.
+
+```{r}
+
+printcp(rt.a1) 
+
+```
+
+A tree is obtained by using th cp value of 0.08.
+
+
+```{r}
+
+rt2.a1 <- prune(rt.a1, cp = 0.08)
+ 
+rt2.a1
+
+```
+
+Below the function **rpartXse** is used to split the tree and obtain a subtree. 
+
+```{r}
+
+(rt.a1 <- rpartXse(a1 ~ ., data = algae[, 1:12]))
+
+```
+
+Below a pruned tree is obtained by using the function **snip.part**. Using this function, a pruned tree can be generated by indicating the number of nodes you would like to prune the tree or use it in a graphical way by plotting the tree and plot it without calling the function with a second argument.
+
+```{r}
+
+first.tree <- rpart(a1 ~ ., data = algae[, 1:12])
+
+snip.rpart(first.tree, c(4, 7))
+
+```
+
+
+```{r}
+
+prettyTree(first.tree)
+
+snip.rpart(first.tree)
+
+```
+
+Below the predictions for the model are created for two seperate models in order to figure out their mean absolute error (MAE). 
+
+```{r}
+
+lm.predictions.a1 <- predict(final.lm, clean.algae)
+
+rt.predictions.a1 <- predict(rt.a1, algae)
+
+```
+
+
+The mean absolute error is calcualted below for the models.
+
+```{r}
+
+(mae.a1.lm <- mean(abs(lm.predictions.a1 - algae[, "a1"])))
+
+(mae.a1.rt <- mean(abs(rt.predictions.a1 - algae[, "a1"]))) 
+
+```
+
+Then below we have the mean sqaured error (MSE) that gets calculated.
+
+```{r}
+
+(mse.a1.lm <- mean((lm.predictions.a1 - algae[, "a1"])^2))
+
+
+(mse.a1.rt <- mean((rt.predictions.a1 - algae[, "a1"])^2))
+
+```
+
+Below the Normalized Mean Squared Error is calculated in order see if the scores gathered from the models are good or bad.
+
+```{r}
+
+(nmse.a1.lm <- mean((lm.predictions.a1-algae[,'a1'])^2)/
+ mean((mean(algae[,'a1'])-algae[,'a1'])^2))
+
+(nmse.a1.rt <- mean((rt.predictions.a1-algae[,'a1'])^2)/
+ mean((mean(algae[,'a1'])-algae[,'a1'])^2))
+
+```
+
+Below the function **regr.eval** is used to calculate the value of a set of regression evaluation metrics. 
+
+```{r}
+
+regr.eval(algae[, "a1"], rt.predictions.a1, train.y = algae[,
+ "a1"])
+
+```
+
+Below the predictions are plotted for the mdoels using a scatterplot of the errors. 
+
+```{r}
+
+old.par <- par(mfrow = c(1, 2))
+
+plot(lm.predictions.a1, algae[, "a1"], main = "Linear Model",
+xlab="Predictions",ylab="TrueValues")
+abline(0, 1, lty = 2)
+
+plot(rt.predictions.a1, algae[, "a1"], main = "Regression Tree",
+xlab="Predictions",ylab="TrueValues")
+abline(0, 1, lty = 2)
+
+par(old.par)
+
+```
+
+
+Below the sample number that provides the bad prediction is obtained by using the function **identify**.
+
+```{r}
+
+plot(lm.predictions.a1,algae[,'a1'],main="Linear Model",
+xlab="Predictions",ylab="True Values")
+abline(0,1,lty=2)
+
+algae[identify(lm.predictions.a1,algae[,'a1']),]
+
+```
+
+The performance of the model gets improved by add an if else statement. 
+
+```{r}
+
+sensible.lm.predictions.a1 <- ifelse(lm.predictions.a1 < 0,0,lm.predictions.a1)
+
+regr.eval(algae[, "a1"], lm.predictions.a1, stats = c("mae","mse"))
+
+regr.eval(algae[, "a1"], sensible.lm.predictions.a1, stats = c("mae","mse"))
+
+```
+
+Below the two models are being prepared for cross validation.
+
+```{r}
+
+cv.rpart <- function(form,train,test,...) {
+ 
+ m <-rpartXse(form,train,...)
+ 
+ p <-predict(m,test)
+ 
+ mse <-mean((p-resp(form,test))^2)
+ 
+ c(nmse=mse/mean((mean(resp(form,train))-resp(form,test))^2))
+
+  }
+
+cv.lm <- function(form,train,test,...) {
+
+ m <-lm(form,train,...)
+
+ p <-predict(m,test)
+
+ p <-ifelse(p<0,0,p)
+
+ mse <-mean((p-resp(form,test))^2)
+
+ c(nmse=mse/mean((mean(resp(form,train))-resp(form,test))^2))
+
+  }
+
+```
+
+The cross validation comparison of the two models are created below.
+
+```{r}
+
+res <- experimentalComparison(
+
+ c(dataset(a1 ~ .,clean.algae[,1:12],'a1')),
+
+ c(variants('cv.lm'),
+
+ variants('cv.rpart',se=c(0,0.5,1))),
+
+ cvSettings(3,10,1234))
+
+```
+
+Below a summary of the cross validation results are created.
+
+```{r}
+
+summary(res)
+
+```
+
+The plot of the cross validation results is created. cv.lm.v1 contains residuals. All plots look more right skewed.
+
+```{r}
+
+plot(res)
+
+```
+
+Below the specific parameter settings corresponding to a specifc label is checked.
+
+```{r}
+
+getVariant("cv.rpart.v1", res)
+
+```
+Below we creater vectors of datasets which are useful for comparison of 7 different predicitive tasks. 
+We create a formula for the comparison to be carried out by using as.formula function and we include all the attributes for the comparison. 
+Then, we use the experimentalComparison function where we can compare the two models and try to find out the best results from them. 
+
+```{r}
+DSs <- sapply(names(clean.algae)[12:18], 
+              function(x,names.attrs) { 
+                f <- as.formula(paste(x,"~ .")) 
+                dataset(f,clean.algae[,c(names.attrs,x)],x)
+                }, 
+              names(clean.algae)[1:11]) 
+res.all <- experimentalComparison( 
+                DSs, 
+                c(variants( 'cv.lm'), 
+                  variants( 'cv.rpart',se=c(0,0.5,1))
+                  ), 
+                cvSettings(5,10,1234))
+```
+
+
+```{r}
+plot(res.all) 
+```
+
+From this plot, we can observe that algae a1 has the least NMSE. So, We can say that the highest predictive accuracy is seen in predicting algae a1.
+
+```{r}
+bestScores(res.all) #this function is used to display the best results obtained from comparing the normalised mean square error values of the dataframes which are based on the linear model and the recursive partitioning and regression trees
+```
+
+Random Forests are similar to a famous Ensemble technique called Bagging but have a different tweak in it. In Random Forests the idea is to decorrelate the several trees which are generated by the different bootstrapped samples from training Data. 
+
+```{r}
+library(randomForest) 
+cv.rf <- function(form,train,test,...) { 
+  m <- randomForest(form,train,...) 
+  p <- predict(m,test) 
+  mse <- mean((p-resp(form,test))^2) 
+  c(nmse=mse/mean((mean(resp(form,train))-resp(form,test))^2)) 
+} 
+# As above, we applied random forest cross-validation and create training and test sets for the datasets. We use resp function in the training set code as this function obtains the values in the column whose name is the target variable of a prediction problem described by a formula.
+res.all <- experimentalComparison( 
+    DSs, 
+    c(variants( 'cv.lm'), 
+      variants( 'cv.rpart',se=c(0,0.5,1)),
+      variants( 'cv.rf',ntree=c(200,500,700))
+      ), 
+    cvSettings(5,10,1234)) #This class of objects contains the information describing a cross validation experiment i.e its settings.
+# After implementing random forest cross validation we use the experimentalComparison function to coarry out and display the best results from the linear model and the recursive partitioning and regression trees model.
+bestScores(res.all)
+
+```
+So from the above bestScores function we can have the bestScores from the "cv.rf.v3","cv.rf.v2","cv.rf.v1" and "cv.rpart.v3" tasks.
+
+compAnalysis() function:
+When you run the experimentalComparison() function to compare a set of learners over a set of problems you obtain estimates of their performances across these problems. This function allows you to test whether the observed differences in these estimated performances are statistically significant with a certain confidence level.
+
+```{r}
+compAnalysis(res.all,against= 'cv.rf.v3', datasets=c('a1','a2','a4','a6'))
+# we try to test which of the performances of the four dataframes are statistically significant with a certain confidence level.
+
+```
+
+In the below code, we compare all the best scores of the models and try to figure out which model or technique gives us the most accurate result. 
+
+```{r}
+bestModelsNames <- sapply(bestScores(res.all), 
+                           function(x) x[ 'nmse','system'])  
+learners <- c(rf= 'randomForest',rpart='rpartXse') # we use two learners for comparing the models
+funcs <- learners[sapply(strsplit(bestModelsNames, '\\.'), 
+                         function(x) x[2])] 
+parSetts <- lapply(bestModelsNames, 
+                   function(x) getVariant(x,res.all)@pars) 
+bestModels <- list() 
+for(a in 1:7) {
+form <- as.formula(paste(names(clean.algae)[11+a], '~. ')) 
+bestModels[[a]] <- do.call(funcs[a], 
+                           c(list(form,clean.algae[,c(1:11,11+
+                                                      a)]),parSetts[[a]]))
+}
+```
+
+In the below code, we use knnImputation to fill in the values with the most relevant data by mapping it to its closest neighbour. We use k= 10 here. Then we create a preds matrix where we predict the values of all the seven algae by using the best model. Here we compare these predictions with the real values to obtain some feedback on the quality of our approach to this prediction problem. The true values of the test set are contained in the algae.sols data frame, available in our package. 
+
+```{r}
+clean.test.algae <- knnImputation(test.algae, k = 10, distData = algae[, 1:11])
+preds <- matrix(ncol=7,nrow=140) 
+for(i in 1:nrow(clean.test.algae)) 
+  preds[i,] <- sapply(1:7,
+                      function(x) 
+    predict(bestModels[[x]],clean.test.algae[i,]) 
+    ) 
+```
+```{r}
+avg.preds <- apply(algae[,12:18],2,mean) 
+apply( ((algae.sols-preds)^2), 2,mean) / apply( (scale(algae.sols,avg.preds,F)^2),2,mean)
+```
+We thus calculate the Normalised Mean Square Error of all the seven types of algae prediction and successfully implemented the regression models for prediction of the algae in the water
+Thus, from the obtained results we can say that algae a1 has the least error in prediction whereas a3 and a7 have the worst prediction perfomance since they have the maximum error.
+So we can say that from the water.
